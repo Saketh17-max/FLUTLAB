@@ -1,0 +1,346 @@
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+void main() {
+  runApp(const HydroTrackApp());
+}
+
+class HydroTrackApp extends StatelessWidget {
+  const HydroTrackApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'HydroTrack',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.light,
+        ),
+        useMaterial3: true,
+      ),
+      home: const HomeScreen(),
+    );
+  }
+}
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  int _currentIntake = 0;
+  int _dailyGoal = 2000;
+
+  final TextEditingController _customIntakeController = TextEditingController();
+  final TextEditingController _goalController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreferences();
+  }
+
+  @override
+  void dispose() {
+    _customIntakeController.dispose();
+    _goalController.dispose();
+    super.dispose();
+  }
+
+  // Load saved intake and goal from SharedPreferences
+  Future<void> _loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentIntake = prefs.getInt('currentIntake') ?? 0;
+      _dailyGoal = prefs.getInt('dailyGoal') ?? 2000;
+    });
+  }
+
+  // Persist updated water intake
+  Future<void> _addWater(int amount) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentIntake += amount;
+    });
+    await prefs.setInt('currentIntake', _currentIntake);
+  }
+
+  // Reset current progress to zero
+  Future<void> _resetIntake() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentIntake = 0;
+    });
+    await prefs.setInt('currentIntake', 0);
+  }
+
+  // Persist updated daily goal
+  Future<void> _updateGoal(int newGoal) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _dailyGoal = newGoal;
+    });
+    await prefs.setInt('dailyGoal', newGoal);
+  }
+
+  // Dialog for editing daily goal
+  void _showSetGoalDialog() {
+    _goalController.text = _dailyGoal.toString();
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Set Daily Goal (ml)'),
+          content: TextField(
+            controller: _goalController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              hintText: 'e.g. 2500',
+              suffixText: 'ml',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final newGoal = int.tryParse(_goalController.text);
+                if (newGoal != null && newGoal > 0) {
+                  _updateGoal(newGoal);
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Dialog for custom intake input
+  void _showCustomAddDialog() {
+    _customIntakeController.clear();
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Add Custom Water'),
+          content: TextField(
+            controller: _customIntakeController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              hintText: 'e.g. 350',
+              suffixText: 'ml',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final amount = int.tryParse(_customIntakeController.text);
+                if (amount != null && amount > 0) {
+                  _addWater(amount);
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    double progress = (_dailyGoal > 0) ? (_currentIntake / _dailyGoal) : 0.0;
+    double progressPercentage = (progress.clamp(0.0, 1.0)) * 100;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('HydroTrack'),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Set Goal',
+            onPressed: _showSetGoalDialog,
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Visual Progress Card
+            Card(
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  children: [
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 170,
+                          height: 170,
+                          child: CircularProgressIndicator(
+                            value: progress.clamp(0.0, 1.0),
+                            strokeWidth: 14,
+                            backgroundColor: Colors.blue.shade100,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              _currentIntake >= _dailyGoal
+                                  ? Colors.green
+                                  : Colors.blue,
+                            ),
+                          ),
+                        ),
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '${progressPercentage.toStringAsFixed(0)}%',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue.shade800,
+                                  ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '$_currentIntake / $_dailyGoal ml',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      _currentIntake >= _dailyGoal
+                          ? '🎉 Daily Goal Achieved!'
+                          : 'Stay hydrated throughout the day!',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: _currentIntake >= _dailyGoal
+                            ? Colors.green
+                            : Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 28),
+
+            // Quick Selection Options
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Quick Add',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildQuickAddButton(200, Icons.local_drink),
+                _buildQuickAddButton(250, Icons.local_drink),
+                _buildQuickAddButton(500, Icons.water_drop),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Form Input Trigger
+            OutlinedButton.icon(
+              onPressed: _showCustomAddDialog,
+              icon: const Icon(Icons.add),
+              label: const Text('Add Custom Amount'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Reset Section
+            TextButton.icon(
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Reset Daily Progress'),
+                    content: const Text(
+                      'Are you sure you want to reset today\'s water intake?',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          _resetIntake();
+                          Navigator.pop(context);
+                        },
+                        child: const Text(
+                          'Reset',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              icon: const Icon(Icons.refresh, color: Colors.red),
+              label: const Text(
+                'Reset Counter',
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickAddButton(int amount, IconData icon) {
+    return ElevatedButton.icon(
+      onPressed: () => _addWater(amount),
+      icon: Icon(icon, size: 18),
+      label: Text('+$amount ml'),
+      style: ElevatedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    );
+  }
+}
